@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autobusy"
+version = "0.0.1"
+dependencies = [
+    "requests",
+    "APScheduler",
+]
+requires-python = ">=3.9"
+authors = [
+  {name = "btcaf"},
+]
+readme = "README.md"
+classifiers = [
+  "Programming Language :: Python"
+]
+
+[project.urls]
+Repository = "https://github.com/btcaf/autobusy.git"

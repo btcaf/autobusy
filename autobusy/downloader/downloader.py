@@ -1,4 +1,4 @@
-from util import add_to_json, get_current_data, check_list_of_hours
+from autobusy.downloader.util import add_to_json, get_current_data, check_list_of_hours
 import argparse
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.combining import OrTrigger
@@ -43,15 +43,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--key',
-        help='API key'
+        help='API key',
+        required=True
     )
     parser.add_argument(
         '--file',
-        help='File to save data to'
+        help='File to save data to',
+        required=True
     )
     parser.add_argument(
         '--hours',
         help='List of hours to gather data',
+        required=True,
         nargs="+",
         type=int
     )
