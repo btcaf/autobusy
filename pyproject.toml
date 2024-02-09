@@ -8,6 +8,9 @@ version = "0.0.1"
 dependencies = [
     "requests",
     "APScheduler",
+    "pandas",
+    "plotly",
+    "folium"
 ]
 requires-python = ">=3.9"
 authors = [
