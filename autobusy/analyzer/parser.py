@@ -47,7 +47,8 @@ class TimetableParser:
         for route_line in route_lines:
             if 'X=' in route_line:
                 curr_stop = route_line.split()[0]
-                res[curr_stop] = []
+                if curr_stop not in res:
+                    res[curr_stop] = []
             elif '*OD' in route_line and curr_stop:
                 write = True
             elif '#OD' in route_line:
