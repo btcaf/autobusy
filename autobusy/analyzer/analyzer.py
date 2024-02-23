@@ -4,12 +4,14 @@ import autobusy.analyzer.util as util
 import plotly.graph_objects as go
 import folium
 from datetime import datetime
+import branca.colormap as cm
 
 
 class RouteData:
     """
     Class for storing route data.
     """
+
     def __init__(self, stop_info: pd.DataFrame, line_route_info: dict[str, list[list[str]]],
                  line_timetable_info: dict[str, dict[str, list[str]]]):
         self.stop_info = stop_info
@@ -21,6 +23,7 @@ class Analyzer:
     """
     Class for analyzing live bus data and timetable data.
     """
+
     def __init__(self, hour: int):
         """
         Constructor for the Analyzer class.
@@ -105,6 +108,7 @@ class Analyzer:
         :param route_data: route data.
         :return: filtered dataframe.
         """
+
         def filter_distance(df):
             for index1, row1 in df.iterrows():
                 for index2, row2 in df.iterrows():
@@ -335,11 +339,54 @@ class Analyzer:
                                 index=['Total', 'Late'])).reset_index()
         self.results.stop_info = route_data.stop_info
 
+    def create_distance_data(self, live_bus_df: pd.DataFrame):
+        """
+        Creates distance data from live bus data and adds it to the results.
+        :param live_bus_df: dataframe with live bus data.
+        :return: None
+        """
+        if self.results.distance_data is not None:
+            return
+        gk = live_bus_df[live_bus_df['Time'].dt.hour == self.hour].sort_values('Time').groupby('VehicleNumber')
+
+        distance_data = gk.apply(
+            lambda x: pd.concat([x['VehicleNumber'], util.distance(
+                x['Lon'].shift(),
+                x['Lat'].shift(),
+                x['Lon'],
+                x['Lat']
+            ).rename("Distance")], axis=1)
+        ).dropna().reset_index(drop=True)
+
+        self.results.distance_data = distance_data.groupby('VehicleNumber').apply(
+            lambda x: pd.Series([x['Distance'].sum()], index=['Distance'])
+        ).reset_index()
+
+    def create_longest_routes(self, live_bus_df: pd.DataFrame, count: int):
+        """
+        Creates the longest routes from live bus data and adds them to the results.
+        :param live_bus_df: dataframe with live bus data.
+        :param count: number of longest routes to get.
+        :return: None
+        """
+        if self.results.longest_routes is not None:
+            return
+        if self.results.distance_data is None:
+            self.create_distance_data(live_bus_df)
+
+        distance_data = self.results.distance_data.nlargest(count, 'Distance')
+
+        live_bus_df = live_bus_df[live_bus_df['Time'].dt.hour == self.hour]
+        live_bus_df = live_bus_df[live_bus_df['VehicleNumber'].isin(distance_data['VehicleNumber'])]
+
+        self.results.longest_routes = live_bus_df.merge(distance_data, on='VehicleNumber')
+
 
 class Results:
     """
     Class for storing analysis results and creating plots.
     """
+
     def __init__(self):
         """
         Constructor for the Results class.
@@ -352,6 +399,8 @@ class Results:
         self.boundary_inaccuracy_count = None
         self.stop_punctuality_data = None
         self.stop_info = None
+        self.distance_data = None
+        self.longest_routes = None
 
     def plot_speeds(self, delimiters: list[int]) -> go.Figure:
         """
@@ -495,4 +544,55 @@ class Results:
                 icon=folium.Icon(color='red', icon='info-sign')
             ).add_to(m)
 
+        return m
+
+    def plot_distance(self, delimiters: list[int]) -> go.Figure:
+        """
+        Plots the number of buses in different distance categories.
+        :param delimiters: list of distance category delimiters.
+        :return: plotly figure.
+        """
+        if self.distance_data is None:
+            raise ValueError('Distance data not created')
+        distance_data = self.distance_data
+        categories = [f'{delimiters[i]}-{delimiters[i + 1]}' for i in range(len(delimiters) - 1)]
+        categories.append(f'{delimiters[-1]}+')
+        values = [
+            distance_data[
+                (distance_data['Distance'] >= delimiters[i]) & (distance_data['Distance'] < delimiters[i + 1])].shape[0]
+            for i in range(len(delimiters) - 1)
+        ]
+        values.append(distance_data[(distance_data["Distance"] >= delimiters[-1])].shape[0])
+        fig = go.Figure(data=[go.Bar(x=categories, y=values)])
+        fig.update_layout(
+            title='Przebyte odległości przez autobusy',
+            title_x=0.5,
+            xaxis_title='Odległość [km]',
+            yaxis_title='Liczba autobusów',
+        )
+        return fig
+
+    def plot_longest_routes(self) -> folium.Map:
+        """
+        Plots the longest routes.
+        :return: folium map.
+        """
+        if self.longest_routes is None:
+            raise ValueError('Longest routes not created')
+        longest_routes = self.longest_routes
+        m = folium.Map(location=[52.22977, 21.01178], zoom_start=11)
+
+        linear_cm = cm.LinearColormap(
+            ['#ad1609', '#05a11a', '#05059c'],
+            vmin=0,
+            vmax=longest_routes['VehicleNumber'].nunique(),
+        )
+
+        for name, group in longest_routes.groupby('VehicleNumber'):
+            folium.PolyLine(
+                group[['Lat', 'Lon']].values,
+                color=linear_cm(group.index[0]),
+                weight=2.5,
+                tooltip=f"Numer linii: {group['Lines'].iloc[0]}<br>Długość: {group['Distance'].iloc[0]}"
+            ).add_to(m)
         return m
