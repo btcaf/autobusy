@@ -3,12 +3,24 @@ import json
 
 
 class TimetableParser:
+    """
+    Class for parsing timetable files.
+    """
     def __init__(self, filename: str):
+        """
+        Constructor for TimetableParser.
+        :param filename: path to the file to be parsed.
+        """
         with open(filename, 'r', encoding='Windows-1250') as f:
             self.file_lines = f.readlines()
 
     @staticmethod
     def parse_line_routes(route_lines: list[str]) -> list[list[str]]:
+        """
+        Gets the route from file lines regarding a given bus line.
+        :param route_lines: list of lines from the file regarding a given bus line.
+        :return: list of lists of stops for each route.
+        """
         res = []
         curr = []
         for route_line in route_lines:
@@ -24,6 +36,11 @@ class TimetableParser:
 
     @staticmethod
     def parse_line_timetables(route_lines: list[str]) -> dict[str, list[str]]:
+        """
+        Gets the timetable from file lines regarding a given bus line.
+        :param route_lines: list of lines from the file regarding a given bus line.
+        :return: dictionary of lists of hours for each stop.
+        """
         res = {}
         curr_stop = ''
         write = False
@@ -43,6 +60,10 @@ class TimetableParser:
         return res
 
     def parse_stop_info(self) -> pd.DataFrame:
+        """
+        Parses the stop information from the file.
+        :return: DataFrame with stop information: ID, Name, Lat, Lon.
+        """
         stop_info = {}
         for file_line in self.file_lines:
             if 'X=' in file_line and 'Kier.' not in file_line:
@@ -65,6 +86,11 @@ class TimetableParser:
         return stop_info_df
 
     def parse_line_info(self) -> tuple[dict[str, list[list[str]]], dict[str, dict[str, list[str]]]]:
+        """
+        Parses the line information from the file.
+        :return: tuple of dictionaries: line number -> list of routes
+                                        and line number -> dictionary of stop -> list of hours.
+        """
         line_route_info = {}
         line_timetable_info = {}
 
@@ -88,17 +114,33 @@ class TimetableParser:
         return line_route_info, line_timetable_info
 
     def parse(self) -> tuple[pd.DataFrame, dict[str, list[list[str]]], dict[str, dict[str, list[str]]]]:
+        """
+        Parses the file.
+        :return: tuple: dataframe with stop information, dictionary of line number -> list of routes,
+                        dictionary of line number -> dictionary of stop -> list of hours.
+        """
         stop_info = self.parse_stop_info()
         line_route_info, line_timetable_info = self.parse_line_info()
         return stop_info, line_route_info, line_timetable_info
 
 
 class LiveParser:
+    """
+    Class for parsing live data json files.
+    """
     def __init__(self, filename: str):
+        """
+        Constructor for LiveParser.
+        :param filename: path to the file to be parsed.
+        """
         with open(filename, 'r') as f:
             self.results = json.load(f)
 
     def parse(self) -> pd.DataFrame:
+        """
+        Parses the file.
+        :return: DataFrame with parsed data: Line, VehicleNumber, Brigade, Lon, Lat, RequestTime.
+        """
         base_df = pd.concat([pd.DataFrame(x['result']) for x in self.results], ignore_index=True)
         base_df['Time'] = pd.to_datetime(base_df['Time'])
         request_time_df = pd.DataFrame([x['request_time'] for x in self.results for _ in range(len(x['result']))],
