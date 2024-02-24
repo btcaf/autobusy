@@ -40,6 +40,7 @@ class Analyzer:
         """
         if self.results.speed_data is not None:
             return
+        live_bus_df = live_bus_df[live_bus_df['RequestTime'].dt.hour == self.hour]
         gk = live_bus_df[live_bus_df['Time'].dt.hour == self.hour].sort_values('Time').groupby('VehicleNumber')
         self.results.speed_data = gk.apply(
             lambda x: pd.concat([x['VehicleNumber'], x['Time'], x['Lon'], x['Lat'], x['Time'], util.speed(
@@ -118,6 +119,7 @@ class Analyzer:
             return False
 
         live_bus_df = live_bus_df.drop(live_bus_df[~live_bus_df["Lines"].isin(route_data.line_route_info)].index)
+        live_bus_df = live_bus_df.drop(live_bus_df[live_bus_df["RequestTime"].dt.hour != self.hour].index)
         live_bus_df = live_bus_df.drop(live_bus_df[live_bus_df["Time"].dt.hour != self.hour].index)
         return live_bus_df.groupby(['Lines', 'VehicleNumber']).filter(filter_distance)
 
@@ -348,10 +350,11 @@ class Analyzer:
         """
         if not filter_measurement_errors and self.results.distance_data is not None:
             return
-        if filter_measurement_errors and self.results.filtered_distance_data is not None:
-            return
-        if filter_measurement_errors and self.results.speed_data is None:
-            self.create_speed_data(live_bus_df)
+        if filter_measurement_errors:
+            if self.results.filtered_distance_data is not None:
+                return
+            if self.results.speed_data is None:
+                self.create_speed_data(live_bus_df)
             high_speed_data = self.results.speed_data[self.results.speed_data['Speed'] > 100]
             live_bus_df = live_bus_df.drop(live_bus_df[live_bus_df['VehicleNumber'].isin(
                 high_speed_data['VehicleNumber'])].index
