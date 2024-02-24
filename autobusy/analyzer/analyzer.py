@@ -42,7 +42,7 @@ class Analyzer:
             return
         gk = live_bus_df[live_bus_df['Time'].dt.hour == self.hour].sort_values('Time').groupby('VehicleNumber')
         self.results.speed_data = gk.apply(
-            lambda x: pd.concat([x['Lon'], x['Lat'], x['Time'], util.speed(
+            lambda x: pd.concat([x['VehicleNumber'], x['Time'], x['Lon'], x['Lat'], x['Time'], util.speed(
                 util.distance(
                     x['Lon'].shift(),
                     x['Lat'].shift(),
@@ -339,14 +339,25 @@ class Analyzer:
                                 index=['Total', 'Late'])).reset_index()
         self.results.stop_info = route_data.stop_info
 
-    def create_distance_data(self, live_bus_df: pd.DataFrame):
+    def create_distance_data(self, live_bus_df: pd.DataFrame, filter_measurement_errors: bool = False):
         """
         Creates distance data from live bus data and adds it to the results.
         :param live_bus_df: dataframe with live bus data.
+        :param filter_measurement_errors: whether to filter out measurement errors (pings with speed > 100 km/h).
         :return: None
         """
-        if self.results.distance_data is not None:
+        if not filter_measurement_errors and self.results.distance_data is not None:
             return
+        if filter_measurement_errors and self.results.filtered_distance_data is not None:
+            return
+        if filter_measurement_errors and self.results.speed_data is None:
+            self.create_speed_data(live_bus_df)
+            high_speed_data = self.results.speed_data[self.results.speed_data['Speed'] > 100]
+            live_bus_df = live_bus_df.drop(live_bus_df[live_bus_df['VehicleNumber'].isin(
+                high_speed_data['VehicleNumber'])].index
+            )
+
+        live_bus_df = live_bus_df[live_bus_df['RequestTime'].dt.hour == self.hour]
         gk = live_bus_df[live_bus_df['Time'].dt.hour == self.hour].sort_values('Time').groupby('VehicleNumber')
 
         distance_data = gk.apply(
@@ -362,24 +373,32 @@ class Analyzer:
             lambda x: pd.Series([x['Distance'].sum()], index=['Distance'])
         ).reset_index()
 
-    def create_longest_routes(self, live_bus_df: pd.DataFrame, count: int):
+    def create_longest_routes(self, live_bus_df: pd.DataFrame, count: int, filter_measurement_errors: bool = False):
         """
         Creates the longest routes from live bus data and adds them to the results.
         :param live_bus_df: dataframe with live bus data.
         :param count: number of longest routes to get.
+        :param filter_measurement_errors: whether to filter out measurement errors (pings with speed > 100 km/h).
         :return: None
         """
-        if self.results.longest_routes is not None:
+        if not filter_measurement_errors and self.results.longest_routes is not None:
             return
-        if self.results.distance_data is None:
+        if filter_measurement_errors and self.results.filtered_longest_routes is not None:
+            return
+        if not filter_measurement_errors and self.results.distance_data is None:
             self.create_distance_data(live_bus_df)
+        if filter_measurement_errors and self.results.filtered_distance_data is None:
+            self.create_distance_data(live_bus_df, filter_measurement_errors=True)
 
         distance_data = self.results.distance_data.nlargest(count, 'Distance')
 
         live_bus_df = live_bus_df[live_bus_df['Time'].dt.hour == self.hour]
         live_bus_df = live_bus_df[live_bus_df['VehicleNumber'].isin(distance_data['VehicleNumber'])]
 
-        self.results.longest_routes = live_bus_df.merge(distance_data, on='VehicleNumber')
+        if filter_measurement_errors:
+            self.results.filtered_longest_routes = live_bus_df.merge(distance_data, on='VehicleNumber')
+        else:
+            self.results.longest_routes = live_bus_df.merge(distance_data, on='VehicleNumber')
 
 
 class Results:
@@ -400,7 +419,9 @@ class Results:
         self.stop_punctuality_data = None
         self.stop_info = None
         self.distance_data = None
+        self.filtered_distance_data = None
         self.longest_routes = None
+        self.filtered_longest_routes = None
 
     def plot_speeds(self, delimiters: list[int]) -> go.Figure:
         """
@@ -572,14 +593,16 @@ class Results:
         )
         return fig
 
-    def plot_longest_routes(self) -> folium.Map:
+    def plot_longest_routes(self, filtered=False) -> folium.Map:
         """
         Plots the longest routes.
         :return: folium map.
         """
-        if self.longest_routes is None:
+        if not filtered and self.longest_routes is None:
             raise ValueError('Longest routes not created')
-        longest_routes = self.longest_routes
+        if filtered and self.filtered_longest_routes is None:
+            raise ValueError('Filtered longest routes not created')
+        longest_routes = self.filtered_longest_routes if filtered else self.longest_routes
         m = folium.Map(location=[52.22977, 21.01178], zoom_start=11)
 
         linear_cm = cm.LinearColormap(
